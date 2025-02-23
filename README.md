@@ -1,1 +1,2 @@
 # Newtons-Method
+This project implements a Python program that uses Newton's method to approximate a root (i.e., a solution) for a given function \( f(x) = 0 \). The program utilises [Sympy](https://www.sympy.org/) to parse the function and compute its symbolic derivative, along with [NumPy](https://numpy.org/) for numerical evaluations. It then iteratively applies Newton's method to find an approximate solution.
