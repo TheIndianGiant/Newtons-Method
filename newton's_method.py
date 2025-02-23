@@ -1,9 +1,15 @@
 import sympy as sp
 import numpy as np
+from sympy.parsing.sympy_parser import (
+    parse_expr, 
+    standard_transformations, 
+    implicit_multiplication_application, 
+    convert_xor
+)
 
 def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100):
     """
-    Applies Newton's Method to find a root for the function func.
+    Applies Newton's Method to find a root for the function f(x).
 
     Parameters:
       func : callable
@@ -18,7 +24,7 @@ def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100):
                Maximum number of iterations.
 
     Returns:
-      (root, iterations) if converged, or (approx_root, max_iter) if reached max iterations.
+      (root, iterations) if converged, or (approx_root, max_iter) if maximum iterations reached.
     """
     x = x0
     for i in range(max_iter):
@@ -46,13 +52,17 @@ def main():
     # Get the function from user input.
     input_expr = input("Enter the function f(x): ")
     
+    # Set up transformations to allow '^' for exponentiation and implicit multiplication.
+    transformations = (standard_transformations + 
+                       (implicit_multiplication_application,) + 
+                       (convert_xor,))
     try:
-        f_expr = sp.sympify(input_expr)
-    except sp.SympifyError:
+        f_expr = parse_expr(input_expr, transformations=transformations)
+    except Exception as e:
         print("Invalid function input!")
         return
     
-    # Compute the symbolic derivative f'(x)
+    # Compute the symbolic derivative f'(x).
     f_prime_expr = sp.diff(f_expr, x)
     
     # Lambdify expressions for numerical evaluations.
@@ -70,13 +80,16 @@ def main():
         print("Invalid initial guess!")
         return
     
-    # Optionally, can allow the user to input the tolerance and maximum iterations.
+    # Allow the user to input the tolerance and maximum iterations.
     try:
-        tol = float(input("Enter the tolerance (default 1e-6): ") or 1e-6)
+        tol_input = input("Enter the tolerance (default 1e-6): ")
+        tol = float(tol_input) if tol_input.strip() != '' else 1e-6
     except ValueError:
         tol = 1e-6
+    
     try:
-        max_iter = int(input("Enter maximum iterations (default 100): ") or 100)
+        max_iter_input = input("Enter maximum iterations (default 100): ")
+        max_iter = int(max_iter_input) if max_iter_input.strip() != '' else 100
     except ValueError:
         max_iter = 100
     
@@ -86,6 +99,12 @@ def main():
         return
     
     root, iterations = result
+
+    # If the result has a negligible imaginary part, display only the real part.
+    # Here, I consider an imaginary part less than 1e-10 as negligible.
+    if isinstance(root, complex) and abs(root.imag) < 1e-10:
+        root = root.real
+
     print(f"\nApproximated root: {root}")
     print(f"Found in {iterations} iterations.")
 
