@@ -7,21 +7,32 @@ from sympy.parsing.sympy_parser import (
     convert_xor
 )
 
-# Custom numerical log function that distinguishes the base.
-def my_log(x, base=None):
-    """
-    Evaluate the logarithm of x.
-    
-    If base is None, computes the natural logarithm.
-    If base equals 10, computes the base-10 logarithm.
-    Otherwise, computes logarithm with the given base.
-    """
-    if base is None:
-        return np.log(x)
-    elif base == 10:
-        return np.log10(x)
-    else:
-        return np.log(x) / np.log(base)
+# Define a custom function for natural logarithm that will print as ln(x)
+class ln(sp.Function):
+    @classmethod
+    def eval(cls, arg):
+        # Leave unevaluated to preserve the original notation.
+        return
+    def fdiff(self, argindex=1):
+        if argindex == 1:
+            return 1/self.args[0]
+        else:
+            raise ValueError("Invalid argument index in ln.")
+
+# Define a custom function for logarithm base 10 that will print as log(x)
+class log(sp.Function):
+    @classmethod
+    def eval(cls, arg):
+        # Leave unevaluated so that it prints as log(x)
+        return
+    def fdiff(self, argindex=1):
+        if argindex == 1:
+            # Derivative of log base 10: 1/(x * ln(10))
+            return 1/(self.args[0] * sp.log(10))
+        else:
+            raise ValueError("Invalid argument index in log.")
+
+# I will use numpy functions directly in lambdify.
 
 def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100, derivative_threshold=1e-12):
     """
@@ -29,32 +40,13 @@ def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100, derivative_threshold
 
     If a nearly zero derivative is encountered, the method prompts the user to
     enter a different starting guess, and then restarts the iteration.
-
-    Parameters:
-      func : callable
-             The function f(x) for which to find the root.
-      dfunc: callable
-             The derivative of f(x).
-      x0   : float
-             The initial guess.
-      tol  : float
-             The tolerance for convergence.
-      max_iter: int
-               Maximum number of iterations per attempt.
-      derivative_threshold: float
-               Threshold below which the derivative is considered nearly zero.
-    
-    Returns:
-      (root, iterations) if converged, or (approx_root, max_iter) if maximum iterations reached.
     """
     guess = x0
-    # Outer loop: Allows re-attempt with a new starting guess if derivative is near zero.
     while True:
         for i in range(max_iter):
             f_val = func(guess)
             fprime_val = dfunc(guess)
             
-            # Check if the derivative is nearly zero.
             if abs(fprime_val) < derivative_threshold:
                 print(f"\nError: Derivative is nearly zero (|f'(x)| = {abs(fprime_val)}) at x = {guess}.")
                 new_guess_str = input("Please enter a different starting guess: ")
@@ -63,22 +55,19 @@ def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100, derivative_threshold
                 except ValueError:
                     print("Invalid input! Exiting.")
                     return None
-                # Break out of the for loop and restart with the new guess.
                 break
             x_new = guess - f_val / fprime_val
             
-            # Check for convergence.
             if abs(x_new - guess) < tol:
                 return x_new, i + 1
             
             guess = x_new
         else:
-            # The for loop completed without encountering a nearly zero derivative.
             print("Warning: Maximum iterations reached; solution may not be accurate.")
             return guess, max_iter
 
 def main():
-    # Declare the symbol
+    # Declare the symbol.
     x = sp.symbols('x')
     
     # Get the function from user input.
@@ -90,13 +79,14 @@ def main():
                        (convert_xor,))
     
     # Map the variable x, Euler's number e, and the logarithmic functions.
-    # Here, I interpret:
-    #   log(x) as log base 10 and ln(x) as the natural logarithm (log base e).
+    # Note that:
+    #   if the user enters ln(x), it stays as ln(x)
+    #   if the user enters log(x), it will be interpreted as base-10 log.
     local_dict = {
         "x": x,
         "e": sp.E,
-        "log": lambda arg: sp.log(arg, 10),  # log(x) becomes log base 10
-        "ln": sp.log                       # ln(x) remains the natural logarithm
+        "ln": ln,  # natural logarithm (will display as ln(x))
+        "log": log # base-10 logarithm (will display as log(x))
     }
     
     try:
@@ -108,10 +98,11 @@ def main():
     # Compute the symbolic derivative f'(x)
     f_prime_expr = sp.diff(f_expr, x)
     
-    # Lambdify the expressions for numerical evaluations using a custom mapping for log.
-    # Note: The key "log" must be a string.
-    f = sp.lambdify(x, f_expr, modules=[{"log": my_log}, "numpy"])
-    f_prime = sp.lambdify(x, f_prime_expr, modules=[{"log": my_log}, "numpy"])
+    # Lambdify the expressions for numerical evaluations.
+    # Map our ln to np.log (natural logarithm) and log to np.log10 (base-10 logarithm)
+    numerical_module = {"ln": np.log, "log": lambda arg: np.log10(arg)}
+    f = sp.lambdify(x, f_expr, modules=[numerical_module, "numpy"])
+    f_prime = sp.lambdify(x, f_prime_expr, modules=[numerical_module, "numpy"])
     
     print("\nYou entered:")
     print("  f(x) =", f_expr)
@@ -142,7 +133,6 @@ def main():
     
     root, iterations = result
 
-    # If the result is complex with a negligible imaginary part, display only the real part.
     if isinstance(root, complex) and abs(root.imag) < 1e-10:
         root = root.real
 
