@@ -7,9 +7,28 @@ from sympy.parsing.sympy_parser import (
     convert_xor
 )
 
-def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100):
+# Custom numerical log function that distinguishes the base.
+def my_log(x, base=None):
+    """
+    Evaluate the logarithm of x.
+    
+    If base is None, computes the natural logarithm.
+    If base equals 10, computes the base-10 logarithm.
+    Otherwise, computes logarithm with the given base.
+    """
+    if base is None:
+        return np.log(x)
+    elif base == 10:
+        return np.log10(x)
+    else:
+        return np.log(x) / np.log(base)
+
+def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100, derivative_threshold=1e-12):
     """
     Applies Newton's Method to find a root for the function f(x).
+
+    If a nearly zero derivative is encountered, the method prompts the user to
+    enter a different starting guess, and then restarts the iteration.
 
     Parameters:
       func : callable
@@ -21,32 +40,45 @@ def newtons_method(func, dfunc, x0, tol=1e-6, max_iter=100):
       tol  : float
              The tolerance for convergence.
       max_iter: int
-               Maximum number of iterations.
-
+               Maximum number of iterations per attempt.
+      derivative_threshold: float
+               Threshold below which the derivative is considered nearly zero.
+    
     Returns:
       (root, iterations) if converged, or (approx_root, max_iter) if maximum iterations reached.
     """
-    x = x0
-    for i in range(max_iter):
-        f_val = func(x)
-        fprime_val = dfunc(x)
-        
-        if fprime_val == 0:
-            print("Error: Zero derivative encountered. No solution found.")
-            return None
-        
-        x_new = x - f_val / fprime_val
-        
-        # Check if the update is within the specified tolerance.
-        if abs(x_new - x) < tol:
-            return x_new, i + 1
-        
-        x = x_new
-    print("Warning: Maximum iterations reached; solution may not be accurate.")
-    return x, max_iter
+    guess = x0
+    # Outer loop: Allows re-attempt with a new starting guess if derivative is near zero.
+    while True:
+        for i in range(max_iter):
+            f_val = func(guess)
+            fprime_val = dfunc(guess)
+            
+            # Check if the derivative is nearly zero.
+            if abs(fprime_val) < derivative_threshold:
+                print(f"\nError: Derivative is nearly zero (|f'(x)| = {abs(fprime_val)}) at x = {guess}.")
+                new_guess_str = input("Please enter a different starting guess: ")
+                try:
+                    guess = float(new_guess_str)
+                except ValueError:
+                    print("Invalid input! Exiting.")
+                    return None
+                # Break out of the for loop and restart with the new guess.
+                break
+            x_new = guess - f_val / fprime_val
+            
+            # Check for convergence.
+            if abs(x_new - guess) < tol:
+                return x_new, i + 1
+            
+            guess = x_new
+        else:
+            # The for loop completed without encountering a nearly zero derivative.
+            print("Warning: Maximum iterations reached; solution may not be accurate.")
+            return guess, max_iter
 
 def main():
-    # Declare the symbol we will use.
+    # Declare the symbol
     x = sp.symbols('x')
     
     # Get the function from user input.
@@ -56,31 +88,41 @@ def main():
     transformations = (standard_transformations + 
                        (implicit_multiplication_application,) + 
                        (convert_xor,))
+    
+    # Map the variable x, Euler's number e, and the logarithmic functions.
+    # Here, I interpret:
+    #   log(x) as log base 10 and ln(x) as the natural logarithm (log base e).
+    local_dict = {
+        "x": x,
+        "e": sp.E,
+        "log": lambda arg: sp.log(arg, 10),  # log(x) becomes log base 10
+        "ln": sp.log                       # ln(x) remains the natural logarithm
+    }
+    
     try:
-        f_expr = parse_expr(input_expr, transformations=transformations)
+        f_expr = parse_expr(input_expr, transformations=transformations, local_dict=local_dict)
     except Exception as e:
         print("Invalid function input!")
         return
     
-    # Compute the symbolic derivative f'(x).
+    # Compute the symbolic derivative f'(x)
     f_prime_expr = sp.diff(f_expr, x)
     
-    # Lambdify expressions for numerical evaluations.
-    f = sp.lambdify(x, f_expr, 'numpy')
-    f_prime = sp.lambdify(x, f_prime_expr, 'numpy')
+    # Lambdify the expressions for numerical evaluations using a custom mapping for log.
+    # Note: The key "log" must be a string.
+    f = sp.lambdify(x, f_expr, modules=[{"log": my_log}, "numpy"])
+    f_prime = sp.lambdify(x, f_prime_expr, modules=[{"log": my_log}, "numpy"])
     
     print("\nYou entered:")
     print("  f(x) =", f_expr)
     print("  f'(x) =", f_prime_expr)
     
-    # Prompt the user to enter the initial guess.
     try:
         x0 = float(input("\nEnter the initial guess: "))
     except ValueError:
         print("Invalid initial guess!")
         return
     
-    # Allow the user to input the tolerance and maximum iterations.
     try:
         tol_input = input("Enter the tolerance (default 1e-6): ")
         tol = float(tol_input) if tol_input.strip() != '' else 1e-6
@@ -100,8 +142,7 @@ def main():
     
     root, iterations = result
 
-    # If the result has a negligible imaginary part, display only the real part.
-    # Here, I consider an imaginary part less than 1e-10 as negligible.
+    # If the result is complex with a negligible imaginary part, display only the real part.
     if isinstance(root, complex) and abs(root.imag) < 1e-10:
         root = root.real
 
